@@ -1,16 +1,1771 @@
-
 <!DOCTYPE html>
-<html lang="en">
+<html lang="bn">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Exam Seat Plan Generator</title>
-    <meta http-equiv="refresh" content="0; url=exam_seat_plan_generator.html">
+    <title>পরীক্ষার সিট প্ল্যান ও রোল সার্চ সিস্টেম</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts - Hind Siliguri -->
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- html2pdf for PDF export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef2ff',
+                            100: '#e0e7ff',
+                            500: '#6366f1',
+                            600: '#4f46e5',
+                            700: '#4338ca',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Hind Siliguri', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Hind Siliguri', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        @media print {
+            .no-print {
+                display: none !important;
+            }
+            .print-only {
+                display: block !important;
+            }
+            body {
+                background-color: white !important;
+                color: black !important;
+                padding: 0 !important;
+            }
+            .printable-area {
+                box-shadow: none !important;
+                border: none !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                margin: 0 !important;
+                padding: 0 !important;
+            }
+            .bench-card {
+                break-inside: avoid;
+            }
+        }
+
+        /* Room detail modal print mode */
+        @media print {
+            body.print-modal header,
+            body.print-modal main,
+            body.print-modal footer,
+            body.print-modal #adminPinModal { display: none !important; }
+            body.print-modal #roomDetailModal {
+                position: static !important; background: none !important;
+                padding: 0 !important; overflow: visible !important;
+            }
+        }
+
+        @page { size: A4 landscape; margin: 8mm; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        .highlight-seat {
+            animation: pulse-border 1.5s infinite;
+        }
+
+        @keyframes pulse-border {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 70, 229, 0.7); }
+            70% { transform: scale(1.04); box-shadow: 0 0 0 10px rgba(79, 70, 229, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(79, 70, 229, 0); }
+        }
+    </style>
 </head>
-<body>
-    <p>
-        Opening Exam Seat Plan Generator...
-        <a href="exam_seat_plan_generator.html">Click here</a>
-    </p>
+<body class="text-slate-800 antialiased min-h-screen flex flex-col">
+
+    <!-- Top Navigation Header -->
+    <header class="bg-indigo-700 text-white shadow-lg no-print sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center space-x-3 space-x-reverse cursor-pointer" onclick="switchTab('search')">
+                <div class="bg-indigo-800 p-2 rounded-xl border border-indigo-500">
+                    <i class="fa-solid fa-chair text-2xl text-indigo-200"></i>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight">পরীক্ষার সিট প্ল্যান ও রোল সার্চ পোর্টাল</h1>
+                    <p class="text-xs text-indigo-200">স্বয়ংক্রিয় সিট প্ল্যানিং ও শিক্ষার্থীদের জন্য তথ্য সেবা</p>
+                </div>
+            </div>
+
+            <!-- Tab Switchers -->
+            <div class="flex items-center gap-2 bg-indigo-800/80 p-1 rounded-xl border border-indigo-600">
+                <button id="tabBtnSearch" onclick="switchTab('search')" class="px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 bg-white text-indigo-700 shadow-sm">
+                    <i class="fa-solid fa-magnifying-glass"></i> রোল অনুসন্ধান
+                </button>
+                <button id="tabBtnAdmin" onclick="attemptAdminAccess()" class="px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 text-indigo-100 hover:text-white">
+                    <i class="fa-solid fa-lock"></i> অ্যাডমিন / সিট প্ল্যান তৈরি
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Dynamic Content Container -->
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex-grow w-full">
+
+        <!-- ========================================== -->
+        <!-- TAB 1: STUDENT SEARCH PORTAL (PUBLIC VIEW) -->
+        <!-- ========================================== -->
+        <section id="searchSection" class="space-y-8">
+            <!-- Hero Search Card -->
+            <div class="bg-gradient-to-br from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-6 sm:p-10 shadow-xl border border-indigo-700 text-center relative overflow-hidden">
+                <div class="absolute -right-10 -bottom-10 opacity-10 text-9xl font-bold">
+                    <i class="fa-solid fa-graduation-cap"></i>
+                </div>
+
+                <div class="max-w-2xl mx-auto space-y-4 relative z-10">
+                    <span class="inline-block px-3 py-1 bg-indigo-500/30 text-indigo-200 rounded-full text-xs font-semibold border border-indigo-400/30">
+                        <i class="fa-solid fa-bullhorn text-amber-300"></i> পরীক্ষার আসন ডিজিটাল তথ্য বোর্ড
+                    </span>
+                    <h2 class="text-2xl sm:text-4xl font-extrabold tracking-tight">আপনার স্কুল, রুম ও সিট সন্ধান করুন</h2>
+                    <p class="text-indigo-200 text-sm sm:text-base">নিচে আপনার রোল নম্বরটি লিখুন এবং আপনার পরীক্ষার স্কুল, ভবন/হল, রুম, কলাম ও সিট অবস্থান দেখুন।</p>
+
+                    <!-- Search Input Form -->
+                    <div class="pt-4 flex flex-col sm:flex-row items-center justify-center gap-3">
+                        <div class="relative w-full sm:w-96">
+                            <i class="fa-solid fa-user-graduate absolute left-4 top-3.5 text-slate-400 text-lg"></i>
+                            <input type="number" id="publicRollInput" placeholder="এখানে রোল নম্বর লিখুন (যেমন: 102)"
+                                onkeyup="if(event.key==='Enter') searchPublicRoll()"
+                                class="w-full pl-12 pr-4 py-3 bg-white text-slate-900 placeholder-slate-400 text-base font-bold rounded-xl border-2 border-indigo-300 focus:border-indigo-500 focus:outline-none shadow-inner">
+                        </div>
+                        <button onclick="searchPublicRoll()" class="w-full sm:w-auto px-8 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-base rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-search"></i> অনুসন্ধান করুন
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="dbStatus" data-state="init" class="text-center text-xs font-bold text-slate-500">ডাটাবেস সংযোগ চেক হচ্ছে...</div>
+
+            <!-- Result Cards Container -->
+            <div id="searchResultContainer" class="hidden space-y-6">
+                <!-- Direct Match Found Card -->
+                <div id="resultFoundCard" class="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-6 shadow-md text-emerald-950">
+                    <div class="flex items-center gap-3 border-b border-emerald-200 pb-3 mb-4">
+                        <div class="bg-emerald-500 text-white p-2.5 rounded-xl shadow-sm">
+                            <i class="fa-solid fa-circle-check text-2xl"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-xl font-extrabold text-emerald-900">পরীক্ষার সিট তথ্য পাওয়া গেছে!</h3>
+                            <p class="text-xs text-emerald-700">রোল নম্বর: <span id="resRoll" class="font-bold font-mono text-sm text-emerald-900"></span></p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                        <div class="bg-white p-3 rounded-xl border border-emerald-200 shadow-sm text-center col-span-2 sm:col-span-2">
+                            <span class="text-xs text-slate-500 block">স্কুল / প্রতিষ্ঠানের নাম</span>
+                            <span id="resSchool" class="text-base font-black text-indigo-900 truncate block"></span>
+                        </div>
+                        <div class="bg-white p-3 rounded-xl border border-emerald-200 shadow-sm text-center">
+                            <span class="text-xs text-slate-500 block">হল / বিল্ডিং</span>
+                            <span id="resHall" class="text-base font-black text-indigo-800 truncate block"></span>
+                        </div>
+                        <div class="bg-white p-3 rounded-xl border border-emerald-200 shadow-sm text-center">
+                            <span class="text-xs text-slate-500 block">পরীক্ষার রুম</span>
+                            <span id="resRoom" class="text-lg font-black text-indigo-700 block"></span>
+                        </div>
+                        <div class="bg-white p-3 rounded-xl border border-emerald-200 shadow-sm text-center">
+                            <span class="text-xs text-slate-500 block">কলাম নম্বর</span>
+                            <span id="resColumn" class="text-lg font-black text-slate-800 block"></span>
+                        </div>
+                        <div class="bg-white p-3 rounded-xl border border-emerald-200 shadow-sm text-center">
+                            <span class="text-xs text-slate-500 block">বেঞ্চ নম্বর</span>
+                            <span id="resBench" class="text-lg font-black text-slate-800 block"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Not Found Card -->
+                <div id="resultNotFoundCard" class="hidden bg-rose-50 border border-rose-200 rounded-2xl p-6 text-center text-rose-800 space-y-2">
+                    <i class="fa-solid fa-triangle-exclamation text-3xl text-rose-500"></i>
+                    <h3 class="text-lg font-bold">উক্ত রোল নম্বরের জন্য কোন সিট পাওয়া যায়নি!</h3>
+                    <p class="text-xs text-rose-600">অনুগ্রহ করে আপনার সঠিক রোল নম্বরটি পুনরায় পরীক্ষা করে চেষ্টা করুন অথবা হল সুপারের সাথে যোগাযোগ করুন।</p>
+                </div>
+
+                <!-- Visual Room Seat Highlight View -->
+                <div id="publicVisualSeatContainer" class="bg-white rounded-2xl border border-slate-200 p-6 shadow-sm space-y-4">
+                    <h4 class="text-base font-bold text-slate-800 border-b pb-2 flex items-center justify-between">
+                        <span><i class="fa-solid fa-eye text-indigo-600"></i> রুমে সিটের ভিজ্যুয়াল ম্যাপিং</span>
+                        <span class="text-xs font-normal text-slate-500">(আপনার সিটটি বেগুনি রঙে হাইলাইট করা হয়েছে)</span>
+                    </h4>
+                    <div id="publicRoomGrid" class="overflow-x-auto pb-4"></div>
+                </div>
+            </div>
+
+            <!-- Quick Notice Board of All Saved Rooms -->
+            <div class="bg-white rounded-2xl border border-slate-200 p-6 space-y-4 shadow-sm">
+                <h3 class="text-lg font-bold text-slate-800 border-b pb-3 flex items-center gap-2">
+                    <i class="fa-solid fa-building text-indigo-600"></i> বর্তমানে প্রকাশিত পরীক্ষার ভবন ও রুমসমূহ
+                </h3>
+                <div id="publicRoomList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+        </section>
+
+        <!-- ========================================== -->
+        <!-- TAB 2: SEAT PLAN CREATOR (ADMIN VIEW)      -->
+        <!-- ========================================== -->
+        <section id="adminSection" class="hidden">
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+                <!-- Left Inputs Panel (Col 5) -->
+                <div class="lg:col-span-5 space-y-6 no-print">
+
+                    <!-- Hall, Room & Column Structure Settings -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-door-open text-indigo-600"></i> স্কুল, হল/ভবন ও রুম সেটিংস
+                            </h2>
+                            <button onclick="lockAdmin()" class="text-xs text-rose-600 bg-rose-50 hover:bg-rose-100 font-semibold px-2 py-1 rounded border border-rose-200 transition">
+                                <i class="fa-solid fa-lock"></i> লক করুন
+                            </button>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-600 mb-1">স্কুল / প্রতিষ্ঠানের নাম</label>
+                            <input type="text" id="schoolName" value="আইডিয়াল হাই স্কুল" placeholder="প্রতিষ্ঠানের নাম লিখুন" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-semibold">
+                        </div>
+
+                        <div class="grid grid-cols-3 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">হল / বিল্ডিং নাম</label>
+                                <input type="text" id="hallName" value="প্রধান ভবন" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">রুম নম্বর / নাম</label>
+                                <input type="text" id="roomNo" value="রুম-১০১" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-slate-600 mb-1">মোট কলাম সংখ্যা</label>
+                                <input type="number" id="numColumns" min="1" max="10" value="4" onchange="renderColumnConfigs()" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                            </div>
+                        </div>
+
+                        <!-- Column Bench & Capacity Inputs -->
+                        <div class="space-y-2">
+                            <div class="flex justify-between items-center">
+                                <label class="block text-xs font-bold text-indigo-700">প্রতি কলামের আলাদা বেঞ্চ ও সিট সংখ্যা</label>
+                                <span class="text-[11px] text-slate-500">(সামনে থেকে পিছনে)</span>
+                            </div>
+                            <div id="columnConfigsContainer" class="space-y-2 max-h-[180px] overflow-y-auto p-2 bg-slate-50 rounded-lg border border-slate-200">
+                                <!-- Dynamic Rows Generated by JS -->
+                            </div>
+                        </div>
+
+                        <!-- Seating Logic Selection -->
+                        <div class="space-y-2">
+                            <label class="block text-xs font-bold text-slate-700">বসার ধরন ও বিন্যাস পদ্ধতি (Seating Logic)</label>
+                            <select id="seatingPattern" class="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none font-medium text-slate-800">
+                                <option value="column-front-to-back">১. কলামের সামনে থেকে পিছনে পর পর (১০১ এর পিছনে ১০২)</option>
+                                <option value="column-alternate-group">২. কলামের সামনে থেকে পিছনে অল্টারনেট গ্রুপ (A1, B1, A2, B2)</option>
+                                <option value="bench-alternate-col">৩. কলাম ভিত্তিক গ্রুপ আলাদা (Col-1 Group A, Col-2 Group B)</option>
+                                <option value="row-zigzag">৪. সারি/রো ভিত্তিক জিগজ্যাগ (Zigzag Pattern)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Roll Range & Group Setup -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-5 space-y-4">
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <h2 class="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                <i class="fa-solid fa-users text-indigo-600"></i> পরীক্ষার্থী ও রোল গ্রুপ
+                            </h2>
+                            <button onclick="addSubjectGroup()" class="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 font-semibold px-2.5 py-1 rounded-md border border-indigo-200 transition">
+                                + নতুন গ্রুপ যোগ করুন
+                            </button>
+                        </div>
+
+                        <div id="subjectGroupsContainer" class="space-y-3 max-h-[260px] overflow-y-auto pr-1">
+                            <!-- Dynamic Group Cards -->
+                        </div>
+                    </div>
+
+                    <!-- Generate & Save Action Buttons -->
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="generateSeatPlan()" class="py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-wand-magic-sparkles"></i> সিট প্ল্যান তৈরি করুন
+                        </button>
+                        <button onclick="saveCurrentRoomPlan()" class="py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm rounded-xl shadow-md transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-floppy-disk"></i> এই রুমটি সেভ করুন
+                        </button>
+                    </div>
+
+                    <div class="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl p-3 text-xs font-semibold"><i class="fa-solid fa-cloud"></i> অনলাইন মোড: সেভ করা রুম Firebase-এ জমা হচ্ছে, সব ডিভাইস থেকে দেখা যাবে।</div>
+                </div>
+
+                <!-- Right Preview Panel (Col 7) -->
+                <div class="lg:col-span-7 space-y-6">
+
+                    <!-- Action & Summary Header -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex flex-wrap justify-between items-center gap-4 no-print">
+                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                            <span class="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-md font-bold border border-indigo-100">
+                                মোট সিট: <strong id="sumTotalCapacity" class="text-sm">0</strong>
+                            </span>
+                            <span class="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-md font-bold border border-emerald-100">
+                                বরাদ্দকৃত: <strong id="sumAllocated" class="text-sm">0</strong>
+                            </span>
+                            <span class="bg-amber-50 text-amber-700 px-2.5 py-1 rounded-md font-bold border border-amber-100">
+                                ফাঁকা: <strong id="sumEmpty" class="text-sm">0</strong>
+                            </span>
+                        </div>
+
+                        <!-- Print / Export Tools -->
+                        <div class="flex items-center gap-2">
+                            <button onclick="window.print()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-900 text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-print text-xs"></i> প্রিন্ট
+                            </button>
+                            <button onclick="downloadPDF()" class="px-3.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition flex items-center gap-1.5 shadow-sm">
+                                <i class="fa-solid fa-file-pdf text-xs"></i> PDF
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Quick Admin Search Bar -->
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-3 flex items-center gap-3 no-print">
+                        <div class="relative flex-grow">
+                            <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-sm"></i>
+                            <input type="number" id="adminSearchRoll" placeholder="বর্তমান রুমে রোল নম্বর টেস্ট খুঁজুন..." onkeyup="searchStudentRollInPreview()" class="w-full pl-9 pr-3 py-1.5 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        </div>
+                        <span id="adminSearchResultText" class="text-xs font-semibold text-indigo-700"></span>
+                    </div>
+
+                    <!-- Alert Box -->
+                    <div id="alertBox" class="hidden p-4 rounded-xl text-sm border"></div>
+
+                    <!-- Printable Visual Area -->
+                    <div id="printableArea" class="printable-area bg-white rounded-xl shadow-sm border border-slate-200 p-6 space-y-6">
+
+                        <!-- Title Header -->
+                        <div class="text-center border-b pb-4 space-y-1">
+                            <h2 class="text-2xl font-bold text-indigo-800" id="printSchoolName">আইডিয়াল হাই স্কুল</h2>
+                            <div class="flex justify-center items-center gap-3 text-xs font-medium text-slate-600 pt-1 flex-wrap">
+                                <span>হল/বিল্ডিং: <strong id="printHallName" class="text-slate-800">প্রধান ভবন</strong></span>
+                                <span>•</span>
+                                <span>কক্ষ: <strong id="printRoomNo" class="text-slate-800">রুম-১০১</strong></span>
+                                <span>•</span>
+                                <span>তারিখ: <strong id="printDate" class="text-slate-800">--/--/----</strong></span>
+                                <span>•</span>
+                                <span>মোট পরীক্ষার্থী: <strong id="printAllocated" class="text-slate-800">0</strong></span>
+                            </div>
+                        </div>
+
+                        <!-- Front Board Indicator -->
+                        <div class="w-full py-2 bg-indigo-50/60 border-2 border-dashed border-indigo-200 rounded-lg text-center text-xs font-bold text-indigo-700 uppercase tracking-wider">
+                            <i class="fa-solid fa-chalkboard text-indigo-500"></i> [সামনের দিক]
+                        </div>
+
+                        <!-- Dynamic Visual Grid -->
+                        <div id="seatPlanGrid" class="overflow-x-auto pb-4">
+                            <!-- Grid rendered via JS -->
+                        </div>
+
+                        <!-- Group Legend Footer -->
+                        <div class="border-t pt-4">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">বিষয়/গ্রুপ নির্দেশিকা:</h4>
+                            <div id="colorLegend" class="flex flex-wrap gap-3 text-xs"></div>
+                        </div>
+
+                        <!-- Print Signatures -->
+                        <div class="hidden print-only pt-12 grid grid-cols-2 text-xs text-center">
+                        </div>
+
+                    </div>
+
+                    <!-- Protected Storage Management Section (Inside Admin Only) -->
+                    <div class="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4 no-print">
+                        <div class="flex flex-wrap justify-between items-center gap-3 border-b pb-3">
+                            <div>
+                                <h3 class="text-md font-bold text-slate-800"><i class="fa-solid fa-database text-indigo-600 mr-1"></i> সংরক্ষিত সকল রুমের সিট প্ল্যান</h3>
+                                <p class="text-xs text-slate-500">এখানে সেভ করা সমস্ত রুম সুরক্ষিত অবস্থায় থাকবে।</p>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5 justify-end">
+                                <button onclick="downloadAllRoomsPDF()" class="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold"><i class="fa-solid fa-file-pdf"></i> সব রুম PDF</button>
+                                <button onclick="rebuildIndexNow()" class="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white rounded-lg text-xs font-semibold"><i class="fa-solid fa-rotate"></i> ইনডেক্স আপডেট</button>
+                                <button onclick="exportBackup()" class="px-2.5 py-1.5 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold"><i class="fa-solid fa-download"></i> Backup</button>
+                                <button onclick="document.getElementById('importFile').click()" class="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold"><i class="fa-solid fa-upload"></i> Import</button>
+                                <input type="file" id="importFile" accept=".json" class="hidden" onchange="importBackup(event)">
+                                <button onclick="clearAllData()" class="px-2.5 py-1.5 bg-rose-50 text-rose-600 hover:bg-rose-100 rounded-lg text-xs font-semibold border border-rose-200 transition"><i class="fa-solid fa-trash"></i> সব মুছুন</button>
+                            </div>
+                        </div>
+                        <div id="savedRoomsGrid" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                            <!-- Populated dynamically -->
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ADMIN PIN AUTH MODAL -->
+    <div id="adminPinModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 text-center space-y-4">
+            <div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto text-xl">
+                <i class="fa-solid fa-shield-halved"></i>
+            </div>
+            <div>
+                <h3 class="text-lg font-bold text-slate-900">অ্যাডমিন প্রবেশ সুরক্ষা</h3>
+                <p class="text-xs text-slate-500">অ্যাডমিন ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন</p>
+            </div>
+            <div>
+                <input type="email" id="adminEmailInput" placeholder="অ্যাডমিন ইমেইল" class="w-full text-center text-sm px-4 py-2 mb-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <input type="password" id="adminPinInput" placeholder="পাসওয়ার্ড"
+                    onkeyup="if(event.key==='Enter') verifyAdminPin()"
+                    class="w-full text-center tracking-widest text-lg font-bold px-4 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                <p id="pinErrorMessage" class="text-xs text-rose-600 font-bold mt-1 hidden">ভুল ইমেইল বা পাসওয়ার্ড!</p>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="closeAdminPinModal()" class="w-1/2 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold">বাতিল</button>
+                <button onclick="verifyAdminPin()" class="w-1/2 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold">প্রবেশ করুন</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ROOM DETAILS MODAL -->
+    <div id="roomDetailModal" class="fixed inset-0 bg-slate-900/60 z-50 hidden overflow-y-auto p-4">
+        <div class="bg-white rounded-2xl max-w-5xl mx-auto p-5 space-y-4 shadow-2xl">
+            <div class="flex justify-between items-center gap-2 flex-wrap no-print border-b pb-3">
+                <h3 class="text-lg font-bold text-slate-800"><i class="fa-solid fa-eye text-indigo-600"></i> রুমের বিস্তারিত তথ্য</h3>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="printModalRoom()" class="px-3 py-1.5 bg-slate-800 text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-print"></i> প্রিন্ট</button>
+                    <button onclick="downloadModalPDF()" class="px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-file-pdf"></i> PDF</button>
+                    <button onclick="downloadRoomJSON()" class="px-3 py-1.5 bg-sky-600 text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-download"></i> JSON</button>
+                    <button onclick="editRoomInGenerator()" class="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-xs font-bold"><i class="fa-solid fa-pen"></i> এডিটে নিন</button>
+                    <button onclick="closeRoomModal()" class="px-3 py-1.5 bg-slate-200 text-slate-700 rounded-lg text-xs font-bold">বন্ধ</button>
+                </div>
+            </div>
+
+            <div id="modalPrintable" class="space-y-4 p-2 bg-white">
+                <div class="text-center border-b pb-3 space-y-1">
+                    <h2 id="mSchool" class="text-2xl font-bold text-indigo-800"></h2>
+                    <p class="text-xs text-slate-600">
+                        হল/ভবন: <strong id="mHall"></strong> • কক্ষ: <strong id="mRoom"></strong> •
+                        মোট পরীক্ষার্থী: <strong id="mCount"></strong> • মোট সিট: <strong id="mCap"></strong>
+                    </p>
+                </div>
+                <div class="w-full py-2 bg-indigo-50 border-2 border-dashed border-indigo-200 rounded-lg text-center text-xs font-bold text-indigo-700">[সামনের দিক]</div>
+                <div id="modalGrid" class="overflow-x-auto pb-2"></div>
+                <div id="modalLegend" class="flex flex-wrap gap-3 text-xs border-t pt-3"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-white border-t border-slate-200 py-4 text-center text-xs text-slate-500 no-print mt-auto">
+        <p>স্বয়ংক্রিয় পরীক্ষার সিট প্ল্যান ও ডিজিটাল রোল অনুসন্ধান সিস্টেম</p>
+    </footer>
+
+    <!-- Application Script Logic -->
+    <script>
+        const STORAGE_KEY = 'exam_seat_plans_data';
+        const DEFAULT_ADMIN_PIN = '1118052';
+        let isAdminAuthenticated = false;
+
+        function getStoredPin() {
+            return localStorage.getItem('admin_pin') || DEFAULT_ADMIN_PIN;
+        }
+
+        function updateAdminPin() {
+            const newPin = document.getElementById('newAdminPin').value.trim();
+            if (!newPin || newPin.length < 3) {
+                alert('নতুন পিন অন্তত ৩ অক্ষরের হতে হবে!');
+                return;
+            }
+            localStorage.setItem('admin_pin', newPin);
+            alert('অ্যাডমিন পিন সফলভাবে আপডেট করা হয়েছে!');
+            document.getElementById('newAdminPin').value = '';
+        }
+
+        const colorPalette = [
+            { bg: 'bg-indigo-100', text: 'text-indigo-900', border: 'border-indigo-300', badge: 'bg-indigo-600 text-white' },
+            { bg: 'bg-emerald-100', text: 'text-emerald-900', border: 'border-emerald-300', badge: 'bg-emerald-600 text-white' },
+            { bg: 'bg-amber-100', text: 'text-amber-900', border: 'border-amber-300', badge: 'bg-amber-600 text-white' },
+            { bg: 'bg-rose-100', text: 'text-rose-900', border: 'border-rose-300', badge: 'bg-rose-600 text-white' },
+            { bg: 'bg-sky-100', text: 'text-sky-900', border: 'border-sky-300', badge: 'bg-sky-600 text-white' },
+            { bg: 'bg-purple-100', text: 'text-purple-900', border: 'border-purple-300', badge: 'bg-purple-600 text-white' }
+        ];
+
+        let subjectGroups = [
+            { id: 1, name: 'বিজ্ঞান (Science)', rolls: '101-120' },
+            { id: 2, name: 'মানবিক (Arts)', rolls: '201-220' }
+        ];
+        let nextGroupId = 3;
+        let currentGeneratedPlan = null;
+        let currentViewIndex = null;
+
+        // Initialize on load
+        window.onload = function() {
+            const today = new Date();
+            document.getElementById('printDate').innerText = today.toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            renderColumnConfigs();
+            renderSubjectGroups();
+            generateSeatPlan();
+            loadAndRenderSavedRooms();
+        };
+
+        // Admin PIN Verification Logic
+        function attemptAdminAccess() {
+            if (isAdminAuthenticated) {
+                switchTab('admin');
+            } else {
+                document.getElementById('adminPinModal').classList.remove('hidden');
+                document.getElementById('adminPinInput').focus();
+            }
+        }
+
+        function verifyAdminPin() {
+            const pinVal = document.getElementById('adminPinInput').value.trim();
+            const errMsg = document.getElementById('pinErrorMessage');
+            if (pinVal === getStoredPin()) {
+                isAdminAuthenticated = true;
+                errMsg.classList.add('hidden');
+                closeAdminPinModal();
+                switchTab('admin');
+            } else {
+                errMsg.classList.remove('hidden');
+            }
+        }
+
+        function closeAdminPinModal() {
+            document.getElementById('adminPinModal').classList.add('hidden');
+            document.getElementById('adminPinInput').value = '';
+        }
+
+        function lockAdmin() {
+            isAdminAuthenticated = false;
+            switchTab('search');
+            alert('অ্যাডমিন প্যানেল লক করা হয়েছে।');
+        }
+
+        // Tab Switching Logic
+        function switchTab(tab) {
+            const searchSec = document.getElementById('searchSection');
+            const adminSec = document.getElementById('adminSection');
+
+            const btnSearch = document.getElementById('tabBtnSearch');
+            const btnAdmin = document.getElementById('tabBtnAdmin');
+
+            // Hide all
+            searchSec.classList.add('hidden');
+            adminSec.classList.add('hidden');
+
+            // Reset Tab Styles
+            [btnSearch, btnAdmin].forEach(btn => {
+                btn.className = "px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 text-indigo-100 hover:text-white";
+            });
+
+            if (tab === 'search') {
+                searchSec.classList.remove('hidden');
+                btnSearch.className = "px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 bg-white text-indigo-700 shadow-sm";
+                loadAndRenderSavedRooms();
+            } else if (tab === 'admin') {
+                adminSec.classList.remove('hidden');
+                btnAdmin.className = "px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 bg-white text-indigo-700 shadow-sm";
+                loadAndRenderSavedRooms();
+            }
+        }
+
+        // Render Column Inputs
+        function renderColumnConfigs() {
+            const container = document.getElementById('columnConfigsContainer');
+            const numCols = parseInt(document.getElementById('numColumns').value) || 1;
+
+            const existingConfigs = [];
+            for(let i = 0; i < numCols; i++) {
+                const benchInput = document.getElementById(`col_benches_${i}`);
+                const capInput = document.getElementById(`col_cap_${i}`);
+                existingConfigs.push({
+                    benches: benchInput ? benchInput.value : 5,
+                    capacity: capInput ? capInput.value : 2
+                });
+            }
+
+            container.innerHTML = '';
+
+            for (let i = 0; i < numCols; i++) {
+                const configRow = document.createElement('div');
+                configRow.className = 'grid grid-cols-12 gap-2 items-center bg-white p-2 rounded border border-slate-200 text-xs';
+
+                configRow.innerHTML = `
+                    <div class="col-span-3 font-bold text-slate-700">কলাম ${i + 1}</div>
+                    <div class="col-span-5 flex items-center gap-1">
+                        <span class="text-slate-500">বেঞ্চ:</span>
+                        <input type="number" id="col_benches_${i}" min="1" max="30" value="${existingConfigs[i] ? existingConfigs[i].benches : 5}"
+                            class="w-full px-2 py-1 border border-slate-300 rounded text-center focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                    </div>
+                    <div class="col-span-4 flex items-center gap-1">
+                        <span class="text-slate-500">সিট:</span>
+                        <select id="col_cap_${i}" class="w-full px-1 py-1 border border-slate-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-500">
+                            <option value="1" ${existingConfigs[i] && existingConfigs[i].capacity == 1 ? 'selected' : ''}>১ জন</option>
+                            <option value="2" ${!existingConfigs[i] || existingConfigs[i].capacity == 2 ? 'selected' : ''}>২ জন</option>
+                            <option value="3" ${existingConfigs[i] && existingConfigs[i].capacity == 3 ? 'selected' : ''}>৩ জন</option>
+                        </select>
+                    </div>
+                `;
+                container.appendChild(configRow);
+            }
+        }
+
+        // Render Groups Input
+        function renderSubjectGroups() {
+            const container = document.getElementById('subjectGroupsContainer');
+            container.innerHTML = '';
+
+            subjectGroups.forEach((group, index) => {
+                const color = colorPalette[index % colorPalette.length];
+                const groupEl = document.createElement('div');
+                groupEl.className = `p-3 rounded-lg border ${color.border} ${color.bg} space-y-2 relative`;
+
+                groupEl.innerHTML = `
+                    <div class="flex justify-between items-center gap-2">
+                        <input type="text" value="${group.name}" placeholder="গ্রুপ / বিষয় নাম"
+                            onchange="updateGroup(${group.id}, 'name', this.value)"
+                            class="text-xs font-bold px-2 py-1 rounded border border-slate-300 bg-white/90 w-full focus:outline-none">
+                        ${subjectGroups.length > 1 ? `
+                            <button onclick="removeSubjectGroup(${group.id})" class="text-slate-400 hover:text-red-600 text-sm px-1">
+                                <i class="fa-solid fa-trash"></i>
+                            </button>
+                        ` : ''}
+                    </div>
+                    <div>
+                        <input type="text" value="${group.rolls}" placeholder="রোলসমূহ (যেমন: 101-130 বা 101, 102)"
+                            onchange="updateGroup(${group.id}, 'rolls', this.value)"
+                            class="text-xs px-2 py-1 rounded border border-slate-300 bg-white/90 w-full focus:outline-none font-mono">
+                    </div>
+                `;
+                container.appendChild(groupEl);
+            });
+        }
+
+        function addSubjectGroup() {
+            const letter = String.fromCharCode(65 + subjectGroups.length);
+            subjectGroups.push({ id: nextGroupId++, name: `গ্রুপ ${letter}`, rolls: '' });
+            renderSubjectGroups();
+        }
+
+        function removeSubjectGroup(id) {
+            if (subjectGroups.length <= 1) return;
+            subjectGroups = subjectGroups.filter(g => g.id !== id);
+            renderSubjectGroups();
+        }
+
+        function updateGroup(id, field, value) {
+            const group = subjectGroups.find(g => g.id === id);
+            if (group) group[field] = value;
+        }
+
+        function parseRolls(rollsStr, groupInfo) {
+            let students = [];
+            if (!rollsStr || !rollsStr.trim()) return students;
+
+            const parts = rollsStr.split(/[\s,]+/);
+            parts.forEach(part => {
+                part = part.trim();
+                if (part.includes('-')) {
+                    const range = part.split('-');
+                    const start = parseInt(range[0].trim());
+                    const end = parseInt(range[1].trim());
+                    if (!isNaN(start) && !isNaN(end) && start <= end) {
+                        for (let i = start; i <= end; i++) {
+                            students.push({ roll: i, subjectName: groupInfo.name, groupId: groupInfo.id });
+                        }
+                    }
+                } else if (part !== '') {
+                    const rollNum = parseInt(part);
+                    if (!isNaN(rollNum)) {
+                        students.push({ roll: rollNum, subjectName: groupInfo.name, groupId: groupInfo.id });
+                    }
+                }
+            });
+            return students;
+        }
+
+        function showAlert(msg) {
+            const alertBox = document.getElementById('alertBox');
+            alertBox.classList.remove('hidden');
+            alertBox.className = 'p-4 rounded-xl text-sm border bg-amber-50 text-amber-800 border-amber-200';
+            alertBox.innerHTML = `<i class="fa-solid fa-triangle-exclamation mr-1.5"></i> ${msg}`;
+        }
+
+        // Generate Core Seat Plan Matrix
+        function generateSeatPlan() {
+            document.getElementById('alertBox').classList.add('hidden');
+
+            const schoolName = document.getElementById('schoolName').value.trim() || 'আইডিয়াল হাই স্কুল';
+            const hallName = document.getElementById('hallName').value.trim() || 'প্রধান ভবন';
+            const roomNo = document.getElementById('roomNo').value.trim() || 'রুম-১০১';
+            const numColumns = parseInt(document.getElementById('numColumns').value) || 1;
+            const pattern = document.getElementById('seatingPattern').value;
+
+            document.getElementById('printSchoolName').innerText = schoolName;
+            document.getElementById('printHallName').innerText = hallName;
+            document.getElementById('printRoomNo').innerText = roomNo;
+
+            let columnStructures = [];
+            let totalSeatsAvailable = 0;
+
+            for (let c = 0; c < numColumns; c++) {
+                const benches = parseInt(document.getElementById(`col_benches_${c}`)?.value) || 1;
+                const cap = parseInt(document.getElementById(`col_cap_${c}`)?.value) || 1;
+                columnStructures.push({ benches, cap });
+                totalSeatsAvailable += (benches * cap);
+            }
+
+            let parsedGroups = [];
+            let totalStudentsToSeat = 0;
+
+            subjectGroups.forEach((group, index) => {
+                const students = parseRolls(group.rolls, group);
+                if (students.length > 0) {
+                    parsedGroups.push({
+                        ...group,
+                        students: students,
+                        color: colorPalette[index % colorPalette.length]
+                    });
+                    totalStudentsToSeat += students.length;
+                }
+            });
+
+            document.getElementById('sumTotalCapacity').innerText = totalSeatsAvailable;
+            document.getElementById('sumAllocated').innerText = Math.min(totalStudentsToSeat, totalSeatsAvailable);
+            document.getElementById('sumEmpty').innerText = Math.max(0, totalSeatsAvailable - totalStudentsToSeat);
+            document.getElementById('printAllocated').innerText = Math.min(totalStudentsToSeat, totalSeatsAvailable);
+
+            if (totalStudentsToSeat > totalSeatsAvailable) {
+                showAlert(`সতর্কতা: পরীক্ষার্থী (${totalStudentsToSeat}) হল ঘরের সিট ক্ষমতার (${totalSeatsAvailable}) চেয়ে বেশি!`);
+            }
+
+            let seatMatrix = columnStructures.map(col =>
+                Array.from({ length: col.benches }, () =>
+                    Array.from({ length: col.cap }, () => null)
+                )
+            );
+
+            if (pattern === 'column-front-to-back') {
+                // Front to Back Down Columns (101 in front, 102 behind)
+                let allStudents = [];
+                parsedGroups.forEach(g => {
+                    g.students.forEach(st => allStudents.push({ student: st, color: g.color }));
+                });
+
+                let stIndex = 0;
+                for (let col = 0; col < numColumns; col++) {
+                    const bCount = columnStructures[col].benches;
+                    const cCap = columnStructures[col].cap;
+
+                    for (let bench = 0; bench < bCount; bench++) {
+                        for (let seat = 0; seat < cCap; seat++) {
+                            if (stIndex < allStudents.length) {
+                                seatMatrix[col][bench][seat] = allStudents[stIndex];
+                                stIndex++;
+                            }
+                        }
+                    }
+                }
+            } else if (pattern === 'column-alternate-group') {
+                let groupPointers = parsedGroups.map(() => 0);
+                let turn = 0;
+
+                for (let col = 0; col < numColumns; col++) {
+                    const bCount = columnStructures[col].benches;
+                    const cCap = columnStructures[col].cap;
+
+                    for (let bench = 0; bench < bCount; bench++) {
+                        for (let seat = 0; seat < cCap; seat++) {
+                            if (parsedGroups.length === 0) break;
+                            for (let attempts = 0; attempts < parsedGroups.length; attempts++) {
+                                let gi = (turn + attempts) % parsedGroups.length;
+                                if (groupPointers[gi] < parsedGroups[gi].students.length) {
+                                    seatMatrix[col][bench][seat] = {
+                                        student: parsedGroups[gi].students[groupPointers[gi]],
+                                        color: parsedGroups[gi].color
+                                    };
+                                    groupPointers[gi]++;
+                                    turn = (gi + 1) % parsedGroups.length;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (pattern === 'bench-alternate-col') {
+                let groupPointers = parsedGroups.map(() => 0);
+
+                for (let col = 0; col < numColumns; col++) {
+                    const targetGroupIdx = parsedGroups.length > 0 ? col % parsedGroups.length : -1;
+                    const bCount = columnStructures[col].benches;
+                    const cCap = columnStructures[col].cap;
+
+                    for (let bench = 0; bench < bCount; bench++) {
+                        for (let seat = 0; seat < cCap; seat++) {
+                            if (targetGroupIdx !== -1 && groupPointers[targetGroupIdx] < parsedGroups[targetGroupIdx].students.length) {
+                                seatMatrix[col][bench][seat] = {
+                                    student: parsedGroups[targetGroupIdx].students[groupPointers[targetGroupIdx]],
+                                    color: parsedGroups[targetGroupIdx].color
+                                };
+                                groupPointers[targetGroupIdx]++;
+                            } else {
+                                for (let gi = 0; gi < parsedGroups.length; gi++) {
+                                    if (groupPointers[gi] < parsedGroups[gi].students.length) {
+                                        seatMatrix[col][bench][seat] = {
+                                            student: parsedGroups[gi].students[groupPointers[gi]],
+                                            color: parsedGroups[gi].color
+                                        };
+                                        groupPointers[gi]++;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                let groupPointers = parsedGroups.map(() => 0);
+                let turn = 0;
+                const maxBenches = Math.max(...columnStructures.map(c => c.benches));
+
+                for (let bench = 0; bench < maxBenches; bench++) {
+                    for (let col = 0; col < numColumns; col++) {
+                        if (bench >= columnStructures[col].benches) continue;
+                        const cCap = columnStructures[col].cap;
+
+                        for (let seat = 0; seat < cCap; seat++) {
+                            if (parsedGroups.length === 0) break;
+
+                            for (let attempts = 0; attempts < parsedGroups.length; attempts++) {
+                                let gi = (turn + attempts) % parsedGroups.length;
+                                if (groupPointers[gi] < parsedGroups[gi].students.length) {
+                                    seatMatrix[col][bench][seat] = {
+                                        student: parsedGroups[gi].students[groupPointers[gi]],
+                                        color: parsedGroups[gi].color
+                                    };
+                                    groupPointers[gi]++;
+                                    turn = (gi + 1) % parsedGroups.length;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            currentGeneratedPlan = {
+                schoolName: schoolName,
+                hallName: hallName,
+                roomNo: roomNo,
+                columnStructures: columnStructures,
+                parsedGroups: parsedGroups,
+                seatMatrix: seatMatrix,
+                createdAt: new Date().toISOString()
+            };
+
+            renderVisualGrid(seatMatrix, columnStructures, 'seatPlanGrid');
+            renderLegends(parsedGroups, 'colorLegend');
+        }
+
+        // Render Room Visual Grid Map
+        function renderVisualGrid(matrix, columnStructures, targetContainerId, highlightRoll = null) {
+            const gridContainer = document.getElementById(targetContainerId);
+            if (!gridContainer) return;
+            gridContainer.innerHTML = '';
+
+            const cols = columnStructures.length;
+            const gridWrapper = document.createElement('div');
+            gridWrapper.className = `grid gap-4 sm:gap-6 items-start`;
+            gridWrapper.style.gridTemplateColumns = `repeat(${cols}, minmax(120px, 1fr))`;
+
+            for (let c = 0; c < cols; c++) {
+                const colDiv = document.createElement('div');
+                colDiv.className = 'space-y-3';
+                const benchCount = columnStructures[c].benches;
+                const capacity = columnStructures[c].cap;
+
+                colDiv.innerHTML = `
+                    <div class="text-center font-bold text-xs text-indigo-800 bg-indigo-50 py-1.5 px-2 rounded-lg border border-indigo-200 flex items-center justify-center gap-1">
+                        কলাম ${c + 1} (${benchCount} বেঞ্চ)
+                    </div>
+                `;
+
+                for (let b = 0; b < benchCount; b++) {
+                    const benchCard = document.createElement('div');
+                    benchCard.className = 'bench-card bg-slate-50 border border-slate-300 rounded-lg p-2 shadow-sm space-y-1.5 relative';
+
+                    const benchHeader = document.createElement('div');
+                    benchHeader.className = 'text-[10px] text-slate-500 font-bold flex justify-between items-center border-b border-slate-200 pb-1';
+                    benchHeader.innerHTML = `<span>বেঞ্চ ${b + 1} ${b === 0 ? '<span class="text-indigo-600 font-bold">(সামনে)</span>' : ''}</span>`;
+                    benchCard.appendChild(benchHeader);
+
+                    const seatsWrapper = document.createElement('div');
+                    seatsWrapper.className = `grid gap-1.5 ${capacity === 1 ? 'grid-cols-1' : capacity === 2 ? 'grid-cols-2' : 'grid-cols-3'}`;
+
+                    for (let s = 0; s < capacity; s++) {
+                        const seatData = matrix[c][b][s];
+                        const seatBox = document.createElement('div');
+
+                        if (seatData) {
+                            const isMatched = highlightRoll && seatData.student.roll == highlightRoll;
+                            seatBox.setAttribute('data-roll', seatData.student.roll);
+
+                            seatBox.className = `seat-element p-1.5 rounded border text-center transition-all ${
+                                isMatched
+                                ? 'bg-indigo-600 text-white border-indigo-700 ring-4 ring-indigo-400 font-black highlight-seat'
+                                : `${seatData.color.bg} ${seatData.color.border} ${seatData.color.text}`
+                            }`;
+
+                            seatBox.innerHTML = `
+                                <div class="text-[9px] font-bold truncate opacity-80">${seatData.student.subjectName}</div>
+                                <div class="text-sm font-extrabold font-mono mt-0.5">${seatData.student.roll}</div>
+                            `;
+                        } else {
+                            seatBox.className = 'seat-element p-1.5 rounded border border-dashed border-slate-300 bg-white text-center text-slate-300';
+                            seatBox.innerHTML = `<div class="text-[9px]">খালি</div><div class="text-xs font-bold mt-0.5">--</div>`;
+                        }
+                        seatsWrapper.appendChild(seatBox);
+                    }
+
+                    benchCard.appendChild(seatsWrapper);
+                    colDiv.appendChild(benchCard);
+                }
+
+                gridWrapper.appendChild(colDiv);
+            }
+
+            gridContainer.appendChild(gridWrapper);
+        }
+
+        function renderLegends(groups, targetContainerId) {
+            const container = document.getElementById(targetContainerId);
+            if (!container) return;
+            container.innerHTML = '';
+
+            groups.forEach(g => {
+                const item = document.createElement('div');
+                item.className = `flex items-center gap-1.5 px-2.5 py-1 rounded-md border ${g.color.border} ${g.color.bg} ${g.color.text} font-medium`;
+                item.innerHTML = `<span class="w-2.5 h-2.5 rounded-full ${g.color.badge}"></span><span>${g.name} (${g.students.length} জন)</span>`;
+                container.appendChild(item);
+            });
+        }
+
+        function searchStudentRollInPreview() {
+            const searchVal = document.getElementById('adminSearchRoll').value.trim();
+            const resultText = document.getElementById('adminSearchResultText');
+
+            document.querySelectorAll('#seatPlanGrid .seat-element').forEach(el => {
+                el.classList.remove('highlight-seat', 'ring-4', 'ring-indigo-500');
+            });
+
+            if (!searchVal) {
+                resultText.innerText = '';
+                return;
+            }
+
+            const matchedSeat = document.querySelector(`#seatPlanGrid [data-roll="${searchVal}"]`);
+            if (matchedSeat) {
+                matchedSeat.classList.add('highlight-seat', 'ring-4', 'ring-indigo-500');
+                matchedSeat.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                resultText.innerText = `✓ রোল ${searchVal} পাওয়া গেছে!`;
+                resultText.className = "text-xs font-semibold text-emerald-600";
+            } else {
+                resultText.innerText = `✕ পাওয়া যায়নি!`;
+                resultText.className = "text-xs font-semibold text-rose-600";
+            }
+        }
+
+        // LOCAL STORAGE MULTI-ROOM SAVE & RETRIEVAL LOGIC
+        function getRooms() {
+            return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        }
+
+        function saveCurrentRoomPlan() {
+            if (!currentGeneratedPlan) return;
+
+            let savedRooms = getRooms();
+
+            // Check if room name exists, update or add
+            const existingIndex = savedRooms.findIndex(r => r.roomNo.toLowerCase() === currentGeneratedPlan.roomNo.toLowerCase());
+            if (existingIndex !== -1) {
+                savedRooms[existingIndex] = currentGeneratedPlan;
+            } else {
+                savedRooms.push(currentGeneratedPlan);
+            }
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(savedRooms));
+            alert(`সফলভাবে ${currentGeneratedPlan.schoolName} - ${currentGeneratedPlan.roomNo} এর সিট প্ল্যান সেভ করা হয়েছে!`);
+            loadAndRenderSavedRooms();
+        }
+
+        function loadAndRenderSavedRooms() {
+            const savedRooms = getRooms();
+
+            // Render Dashboard Cards inside Admin Only
+            const dashGrid = document.getElementById('savedRoomsGrid');
+            const publicList = document.getElementById('publicRoomList');
+
+            if (dashGrid) dashGrid.innerHTML = '';
+            if (publicList) publicList.innerHTML = '';
+
+            if (savedRooms.length === 0) {
+                if (dashGrid) dashGrid.innerHTML = '<p class="text-sm text-slate-400 col-span-2">কোন সেভ করা রুম নেই। উপরের প্যানেল থেকে তৈরি করে সেভ করুন।</p>';
+                if (publicList) publicList.innerHTML = '<p class="text-sm text-slate-400 col-span-3">বর্তমানে কোন রুম প্ল্যান প্রকাশিত নেই।</p>';
+                return;
+            }
+
+            savedRooms.forEach((room, idx) => {
+                let roomCap = 0;
+                room.columnStructures.forEach(c => roomCap += (c.benches * c.cap));
+                let roomStudents = 0;
+                room.parsedGroups.forEach(g => roomStudents += g.students.length);
+
+                // Admin Dashboard Card
+                if (dashGrid) {
+                    const card = document.createElement('div');
+                    card.className = 'bg-white p-4 rounded-xl border border-slate-200 shadow-sm space-y-2';
+                    card.innerHTML = `
+                        <div class="flex justify-between items-center border-b pb-2">
+                            <div>
+                                <span class="text-[10px] text-indigo-600 font-bold block">${room.schoolName || 'স্কুলের নাম'} (${room.hallName || 'প্রধান ভবন'})</span>
+                                <h4 class="font-bold text-slate-800 text-base"><i class="fa-solid fa-door-open text-indigo-600"></i> ${room.roomNo}</h4>
+                            </div>
+                            <div class="flex items-center gap-1">
+                                <button onclick="viewRoom(${idx})" title="দেখুন" class="text-indigo-600 hover:bg-indigo-50 text-xs px-2 py-1 rounded"><i class="fa-solid fa-eye"></i></button>
+                                <button onclick="pdfRoom(${idx})" title="PDF" class="text-red-600 hover:bg-red-50 text-xs px-2 py-1 rounded"><i class="fa-solid fa-file-pdf"></i></button>
+                                <button onclick="deleteRoom('${room.roomNo}')" title="মুছুন" class="text-rose-500 hover:text-rose-700 text-xs px-2 py-1"><i class="fa-solid fa-trash"></i></button>
+                            </div>
+                        </div>
+                        <div class="text-xs text-slate-600">
+                            <div>কলাম: <strong>${room.columnStructures.length}টি</strong> | বরাদ্দকৃত পরীক্ষার্থী: <strong class="text-emerald-600">${roomStudents} জন</strong> | মোট সিট: <strong>${roomCap}</strong></div>
+                        </div>
+                    `;
+                    dashGrid.appendChild(card);
+                }
+
+                // Public Room Badge
+                if (publicList) {
+                    const pubCard = document.createElement('div');
+                    pubCard.className = 'bg-indigo-50/60 border border-indigo-100 p-3 rounded-xl flex items-center justify-between';
+                    pubCard.innerHTML = `
+                        <div>
+                            <span class="text-[10px] text-indigo-600 font-bold block">${room.schoolName || ''} - ${room.hallName || 'প্রধান ভবন'}</span>
+                            <h5 class="font-bold text-indigo-950 text-sm">${room.roomNo}</h5>
+                            <p class="text-[11px] text-slate-500">${roomStudents} জন পরীক্ষার্থী বরাদ্দ</p>
+                        </div>
+                        <span class="text-xs bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-md">সক্রিয়</span>
+                    `;
+                    publicList.appendChild(pubCard);
+                }
+            });
+        }
+
+        function deleteRoom(roomNo) {
+            if (confirm(`আপনি কি সত্যিই ${roomNo} এর তথ্য মুছে ফেলতে চান?`)) {
+                let savedRooms = getRooms();
+                savedRooms = savedRooms.filter(r => r.roomNo !== roomNo);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(savedRooms));
+                loadAndRenderSavedRooms();
+            }
+        }
+
+        function clearAllData() {
+            if (confirm('আপনি কি নিশ্চিত যে সকল রুমের সেভ করা ডাটা মুছে ফেলতে চান?')) {
+                localStorage.removeItem(STORAGE_KEY);
+                loadAndRenderSavedRooms();
+            }
+        }
+
+        // PUBLIC STUDENT ROLL SEARCH PORTAL
+        function searchPublicRoll() {
+            const inputVal = document.getElementById('publicRollInput').value.trim();
+            const container = document.getElementById('searchResultContainer');
+            const foundCard = document.getElementById('resultFoundCard');
+            const notFoundCard = document.getElementById('resultNotFoundCard');
+
+            if (!inputVal) {
+                alert('অনুগ্রহ করে একটি রোল নম্বর লিখুন!');
+                return;
+            }
+
+            container.classList.remove('hidden');
+            const savedRooms = getRooms();
+            let match = null;
+
+            // Search through saved rooms
+            for (let r of savedRooms) {
+                for (let c = 0; c < r.seatMatrix.length; c++) {
+                    for (let b = 0; b < r.seatMatrix[c].length; b++) {
+                        for (let s = 0; s < r.seatMatrix[c][b].length; s++) {
+                            const seat = r.seatMatrix[c][b][s];
+                            if (seat && seat.student.roll == inputVal) {
+                                match = {
+                                    schoolName: r.schoolName || 'আইডিয়াল হাই স্কুল',
+                                    hallName: r.hallName || 'প্রধান ভবন',
+                                    roomNo: r.roomNo,
+                                    column: c + 1,
+                                    bench: b + 1,
+                                    seatPosition: s + 1,
+                                    subjectName: seat.student.subjectName,
+                                    roll: seat.student.roll,
+                                    roomData: r
+                                };
+                                break;
+                            }
+                        }
+                        if (match) break;
+                    }
+                    if (match) break;
+                }
+                if (match) break;
+            }
+
+            if (match) {
+                foundCard.classList.remove('hidden');
+                notFoundCard.classList.add('hidden');
+
+                document.getElementById('resRoll').innerText = match.roll;
+                document.getElementById('resSchool').innerText = match.schoolName;
+                document.getElementById('resHall').innerText = match.hallName;
+                document.getElementById('resRoom').innerText = match.roomNo;
+                document.getElementById('resColumn').innerText = `কলাম ${match.column}`;
+                document.getElementById('resBench').innerText = `বেঞ্চ ${match.bench}`;
+
+                // Render Visual Map of the Room
+                renderVisualGrid(match.roomData.seatMatrix, match.roomData.columnStructures, 'publicRoomGrid', match.roll);
+            } else {
+                foundCard.classList.add('hidden');
+                notFoundCard.classList.remove('hidden');
+                document.getElementById('publicRoomGrid').innerHTML = '';
+            }
+        }
+
+        // ROOM DETAILS, PDF, BACKUP & IMPORT
+        function roomStudentList(room) {
+            const list = [];
+            room.seatMatrix.forEach((col, c) => col.forEach((bench, b) => bench.forEach((seat, s) => {
+                if (seat) list.push({ roll: seat.student.roll, subject: seat.student.subjectName, col: c + 1, bench: b + 1, seat: s + 1 });
+            })));
+            return list.sort((a, b) => a.roll - b.roll);
+        }
+
+        function viewRoom(idx) {
+            const room = getRooms()[idx];
+            if (!room) return;
+            currentViewIndex = idx;
+
+            const students = roomStudentList(room);
+            let cap = 0;
+            room.columnStructures.forEach(c => cap += c.benches * c.cap);
+
+            document.getElementById('mSchool').innerText = room.schoolName || '';
+            document.getElementById('mHall').innerText = room.hallName || '';
+            document.getElementById('mRoom').innerText = room.roomNo;
+            document.getElementById('mCount').innerText = students.length;
+            document.getElementById('mCap').innerText = cap;
+
+            renderVisualGrid(room.seatMatrix, room.columnStructures, 'modalGrid');
+            renderLegends(room.parsedGroups, 'modalLegend');
+
+            document.getElementById('roomDetailModal').classList.remove('hidden');
+        }
+
+        function closeRoomModal() {
+            document.getElementById('roomDetailModal').classList.add('hidden');
+        }
+
+        function printModalRoom() {
+            document.body.classList.add('print-modal');
+            window.print();
+            document.body.classList.remove('print-modal');
+        }
+
+        function downloadRoomJSON() {
+            const room = getRooms()[currentViewIndex];
+            if (!room) return;
+            downloadBlob(JSON.stringify([room], null, 2), `room_${room.roomNo}.json`);
+        }
+
+        function editRoomInGenerator() {
+            const room = getRooms()[currentViewIndex];
+            if (!room) return;
+            document.getElementById('schoolName').value = room.schoolName || '';
+            document.getElementById('hallName').value = room.hallName || '';
+            document.getElementById('roomNo').value = room.roomNo;
+            document.getElementById('numColumns').value = room.columnStructures.length;
+            renderColumnConfigs();
+            room.columnStructures.forEach((c, i) => {
+                document.getElementById(`col_benches_${i}`).value = c.benches;
+                document.getElementById(`col_cap_${i}`).value = c.cap;
+            });
+            subjectGroups = room.parsedGroups.map(g => ({
+                id: g.id, name: g.name,
+                rolls: g.students.map(s => s.roll).join(',')
+            }));
+            nextGroupId = Math.max(...subjectGroups.map(g => g.id), 0) + 1;
+            renderSubjectGroups();
+            generateSeatPlan();
+            closeRoomModal();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        function downloadBlob(text, filename) {
+            const blob = new Blob([text], { type: 'application/json' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }
+
+        function exportBackup() {
+            const rooms = getRooms();
+            if (rooms.length === 0) { alert('Backup নেওয়ার মতো কোন রুম নেই!'); return; }
+            downloadBlob(JSON.stringify(rooms, null, 2), 'seat_plans_backup.json');
+        }
+
+        function importBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = e => {
+                try {
+                    const imported = JSON.parse(e.target.result);
+                    if (!Array.isArray(imported)) throw new Error('invalid');
+                    const rooms = getRooms();
+                    imported.forEach(r => {
+                        if (!r.roomNo || !r.seatMatrix || !r.columnStructures || !r.parsedGroups) return;
+                        const i = rooms.findIndex(x => x.roomNo === r.roomNo);
+                        if (i !== -1) rooms[i] = r; else rooms.push(r);
+                    });
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
+                    loadAndRenderSavedRooms();
+                    alert('Import সফল হয়েছে!');
+                } catch (err) {
+                    alert('ভুল ফাইল! সঠিক backup JSON ফাইল দিন।');
+                }
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        }
+    </script>
+
+    <script>
+        // ==========================================
+        // সুন্দর PDF: শুধু সিট প্ল্যান (এক পাতায় ১টি সিট প্ল্যান)
+        // ==========================================
+        // ==========================================
+        // সুন্দর PDF: শুধু সিট প্ল্যান (এক পাতায় ১টি সিট প্ল্যান)
+        // ==========================================
+        const PDF_HEX = [
+            { bg: '#e0e7ff', bd: '#a5b4fc', tx: '#312e81', dot: '#4f46e5' },
+            { bg: '#d1fae5', bd: '#6ee7b7', tx: '#064e3b', dot: '#059669' },
+            { bg: '#fef3c7', bd: '#fcd34d', tx: '#78350f', dot: '#d97706' },
+            { bg: '#ffe4e6', bd: '#fda4af', tx: '#881337', dot: '#e11d48' },
+            { bg: '#e0f2fe', bd: '#7dd3fc', tx: '#0c4a6e', dot: '#0284c7' },
+            { bg: '#f3e8ff', bd: '#d8b4fe', tx: '#581c87', dot: '#9333ea' }
+        ];
+
+        function pdfEsc(t) {
+            return String(t == null ? '' : t).replace(/[&<>"']/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+        }
+
+        function pdfColorFor(c) {
+            const i = colorPalette.findIndex(p => c && p.bg === c.bg);
+            return PDF_HEX[i >= 0 ? i : 0];
+        }
+
+        function buildPdfPage(room, dims) {
+            const W = dims.W, H = dims.H;
+            const cols = room.columnStructures.length;
+            const maxBenches = Math.max(1, ...room.columnStructures.map(c => c.benches));
+
+            let students = 0, maxDigits = 1;
+            room.seatMatrix.forEach(col => col.forEach(bench => bench.forEach(seat => {
+                if (seat) { students++; maxDigits = Math.max(maxDigits, String(seat.student.roll).length); }
+            })));
+
+            const today = new Date().toLocaleDateString('bn-BD', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            const PAD = 16;
+            const innerW = W - PAD * 2 - 4;
+            const colGap = 12;
+            const colW = Math.min(250, Math.floor((innerW - (cols - 1) * colGap) / cols));
+            const gridH = H - 264;
+            const benchGap = maxBenches > 12 ? 2 : 5;
+            const benchAreaH = gridH - 22 - 6;
+            const bh = Math.max(12, Math.min(64, Math.floor((benchAreaH - (maxBenches - 1) * benchGap) / maxBenches)));
+
+            const columnsHtml = room.columnStructures.map((cs, c) => {
+                const seatW = Math.floor((colW - 16 - 8 - (cs.cap - 1) * 4) / cs.cap);
+                const rollFont = Math.max(7, Math.min(Math.round(bh * 0.42), 20, bh - 4, Math.floor(seatW / (maxDigits * 0.62))));
+                const showLabel = bh >= 46 && seatW >= 48;
+
+                let benches = '';
+                for (let b = 0; b < cs.benches; b++) {
+                    let seats = '';
+                    for (let s = 0; s < cs.cap; s++) {
+                        const seat = room.seatMatrix[c][b][s];
+                        if (!seat) {
+                            seats += `<div style="flex:1;min-width:0;border:1px dashed #cbd5e1;border-radius:4px;display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:${Math.max(7, rollFont - 2)}px">—</div>`;
+                        } else {
+                            const col = pdfColorFor(seat.color);
+                            seats += `<div style="flex:1;min-width:0;background:${col.bg};border:1px solid ${col.bd};color:${col.tx};border-radius:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.15;overflow:hidden">
+                                <div style="font-weight:700;font-size:${rollFont}px">${pdfEsc(seat.student.roll)}</div>
+                                ${showLabel ? `<div style="font-size:8px;opacity:.8;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;padding:0 2px">${pdfEsc(seat.student.subjectName)}</div>` : ''}
+                            </div>`;
+                        }
+                    }
+                    benches += `<div style="display:flex;align-items:stretch;height:${bh}px;margin-bottom:${benchGap}px">
+                        <div style="width:16px;flex:none;display:flex;align-items:center;justify-content:center;font-size:9px;color:#94a3b8">${b + 1}</div>
+                        <div style="flex:1;min-width:0;display:flex;gap:4px;padding:3px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc">${seats}</div>
+                    </div>`;
+                }
+
+                return `<div style="width:${colW}px;flex:none">
+                    <div style="height:22px;line-height:20px;text-align:center;font-size:11px;font-weight:700;background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;border-radius:6px;margin-bottom:6px">কলাম ${c + 1}</div>
+                    ${benches}
+                </div>`;
+            }).join('');
+
+            const legendHtml = room.parsedGroups.map(g => {
+                const col = pdfColorFor(g.color);
+                return `<span style="display:inline-flex;align-items:center;gap:5px;background:${col.bg};border:1px solid ${col.bd};color:${col.tx};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:600"><span style="width:9px;height:9px;border-radius:50%;background:${col.dot};display:inline-block"></span>${pdfEsc(g.name)} (${g.students.length} জন)</span>`;
+            }).join('');
+
+            const chip = (label, val) => `<span style="background:#eef2ff;border:1px solid #c7d2fe;border-radius:999px;padding:2px 10px">${label}: <b style="color:#1e293b">${pdfEsc(val)}</b></span>`;
+
+            const page = document.createElement('div');
+            page.className = 'pdfpg';
+            page.style.cssText = `width:${W}px;height:${H}px;box-sizing:border-box;padding:${PAD}px;background:#fff;border:2px solid #4338ca;border-radius:12px;display:flex;flex-direction:column;font-family:'Hind Siliguri',sans-serif;color:#1e293b;overflow:hidden;`;
+            page.innerHTML = `
+                <style>.pdfpg, .pdfpg * { box-sizing: border-box; }</style>
+                <div style="height:92px;flex:none;text-align:center;border-bottom:2px solid #4338ca;padding-bottom:6px">
+                    <div style="font-size:24px;font-weight:700;color:#3730a3;line-height:1.3">${pdfEsc(room.schoolName || '')}</div>
+                    <div style="font-size:15px;font-weight:600;color:#334155;margin-top:1px">পরীক্ষার সিট প্ল্যান</div>
+                    <div style="margin-top:7px;display:flex;justify-content:center;gap:8px;font-size:12px;color:#475569">
+                        ${chip('হল/ভবন', room.hallName || '')}
+                        ${chip('কক্ষ', room.roomNo)}
+                        ${chip('মোট পরীক্ষার্থী', students)}
+                        ${chip('তারিখ', today)}
+                    </div>
+                </div>
+                <div style="height:24px;flex:none;margin-top:8px;line-height:20px;text-align:center;border:2px dashed #a5b4fc;border-radius:6px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:700">সামনের দিক (বোর্ড)</div>
+                <div style="flex:1;min-height:0;margin-top:8px;display:flex;justify-content:center;gap:${colGap}px;align-items:flex-start;overflow:hidden">${columnsHtml}</div>
+                <div style="height:34px;flex:none;margin-top:8px;display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:6px">${legendHtml}</div>
+                <div style="height:44px;flex:none;margin-top:6px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 40px;font-size:12px;color:#475569">
+                    <div style="border-top:1px solid #94a3b8;padding-top:3px;min-width:200px;text-align:center">হল ইনভিজিলেটরের স্বাক্ষর</div>
+                    <div style="border-top:1px solid #94a3b8;padding-top:3px;min-width:200px;text-align:center">প্রধান শিক্ষক / পরীক্ষা নিয়ন্ত্রক</div>
+                </div>`;
+            return page;
+        }
+
+        function pdfFromRooms(rooms, filename) {
+            if (!rooms || rooms.length === 0) {
+                alert('ডাউনলোড করার মতো কোন রুম তথ্য পাওয়া যায়নি!');
+                return;
+            }
+
+            let mount = document.getElementById('pdfRenderContainer');
+            if (!mount) {
+                mount = document.createElement('div');
+                mount.id = 'pdfRenderContainer';
+                document.body.appendChild(mount);
+            }
+            mount.innerHTML = '';
+            mount.style.cssText = "position: absolute; left: -9999px; top: -9999px; width: 960px; background: #ffffff; z-index: 9999;";
+
+            const dims = { W: 960, H: 650 }; // Landscape A4 optimized dimensions
+            
+            rooms.forEach((room, idx) => {
+                const pageEl = buildPdfPage(room, dims);
+                if (idx > 0) {
+                    pageEl.style.pageBreakBefore = 'always';
+                }
+                mount.appendChild(pageEl);
+            });
+
+            const opt = {
+                margin: 0,
+                filename: filename,
+                image: { type: 'jpeg', quality: 0.98 },
+                html2canvas: { 
+                    scale: 2, 
+                    useCORS: true, 
+                    backgroundColor: '#ffffff',
+                    scrollX: 0,
+                    scrollY: 0
+                },
+                jsPDF: { unit: 'px', format: [dims.W, dims.H], orientation: 'landscape' },
+                pagebreak: { mode: ['css', 'legacy'] }
+            };
+
+            setTimeout(() => {
+                html2pdf().set(opt).from(mount).save().then(() => {
+                    mount.innerHTML = '';
+                }).catch(err => {
+                    alert('PDF ডাউনলোড ব্যর্থ হয়েছে: ' + err.message);
+                });
+            }, 300);
+        }
+
+        function pdfOne(room) {
+            if (!room) return;
+            pdfFromRooms([room], `Seat_Plan_${room.roomNo}.pdf`);
+        }
+
+        function downloadPDF() {
+            if (!currentGeneratedPlan) { alert('আগে সিট প্ল্যান তৈরি করুন!'); return; }
+            pdfOne(currentGeneratedPlan);
+        }
+        function downloadModalPDF() { pdfOne(getRooms()[currentViewIndex]); }
+        function pdfRoom(idx) { pdfOne(getRooms()[idx]); }
+        function downloadAllRoomsPDF() {
+            const rooms = getRooms();
+            if (rooms.length === 0) { alert('কোন সেভ করা রুম নেই!'); return; }
+            pdfFromRooms(rooms, 'All_Seat_Plans.pdf');
+        }
+    </script>
+
+    <script>
+        setTimeout(function () {
+            var el = document.getElementById('dbStatus');
+            if (el && el.dataset.state === 'init') {
+                el.dataset.state = 'error';
+                el.className = 'text-center text-xs font-bold text-rose-600';
+                el.textContent = '✕ Firebase লোড হয়নি। ইন্টারনেট কানেকশন বা হোস্টিং ডোমেইন চেক করুন।';
+            }
+        }, 8000);
+    </script>
+
+    <!-- ONLINE (FIREBASE) BACKEND -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { getFirestore, collection, doc, setDoc, getDoc, deleteDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+        import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAKS4RZqc70OxCMnvgqabo-aJudQrJV0A0",
+            authDomain: "seat-plan-8ab45.firebaseapp.com",
+            projectId: "seat-plan-8ab45",
+            storageBucket: "seat-plan-8ab45.firebasestorage.app",
+            messagingSenderId: "694786471305",
+            appId: "1:694786471305:web:ee2c4e8a2e65800dd15d58"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        const roomsCol = collection(db, 'rooms');
+        const indexRef = doc(db, 'meta', 'index');
+
+        let roomsCache = [];
+        let indexData = { rooms: [], rolls: {} };
+        let indexLoaded = false;
+        let indexPromise = null;
+        let unsubRooms = null;
+        const roomDocCache = new Map();
+        let lastError = '';
+
+        function setStatus(state, msg) {
+            const el = document.getElementById('dbStatus');
+            if (!el) return;
+            el.dataset.state = state;
+            el.textContent = msg;
+            el.className = 'text-center text-xs font-bold ' + (state === 'ok' ? 'text-emerald-600' : state === 'warn' ? 'text-amber-600' : 'text-rose-600');
+        }
+        function statusAfterIndex() {
+            const n = (indexData.rooms || []).length;
+            const m = Object.keys(indexData.rolls || {}).length;
+            if (n === 0) setStatus('warn', '⚠ ডাটাবেস সংযুক্ত, কিন্তু কোন রুম সেভ করা নেই। অ্যাডমিন প্যানেলে রুম সেভ করুন।');
+            else setStatus('ok', `✓ ডাটাবেস সংযুক্ত — ${n}টি রুম, ${m}টি রোল অনলাইন ডাটাবেসে রয়েছে`);
+        }
+
+        const toId = roomNo => encodeURIComponent(String(roomNo).trim().toLowerCase()).replace(/%/g, '_');
+        const byRoomNo = (a, b) => String(a.roomNo).localeCompare(String(b.roomNo), 'bn');
+
+        function buildIndexJson(list) {
+            const sorted = [...list].sort(byRoomNo);
+            const rooms = [];
+            const rolls = {};
+            sorted.forEach((r, i) => {
+                let count = 0;
+                r.seatMatrix.forEach((col, c) => col.forEach((bench, b) => bench.forEach((seat, s) => {
+                    if (seat) {
+                        count++;
+                        const k = String(seat.student.roll);
+                        if (!(k in rolls)) rolls[k] = [i, c + 1, b + 1, s + 1];
+                    }
+                })));
+                rooms.push({ id: toId(r.roomNo), roomNo: r.roomNo, school: r.schoolName || '', hall: r.hallName || '', count });
+            });
+            return JSON.stringify({ rooms, rolls, updatedAt: Date.now() });
+        }
+
+        async function writeIndex(list) {
+            const json = buildIndexJson(list);
+            await setDoc(indexRef, { json });
+            indexData = JSON.parse(json);
+            indexLoaded = true;
+            roomDocCache.clear();
+            renderPublicRoomList();
+            statusAfterIndex();
+        }
+
+        function loadIndex() {
+            if (indexPromise) return indexPromise;
+            indexPromise = getDoc(indexRef).then(snap => {
+                if (snap.exists()) {
+                    try { indexData = JSON.parse(snap.data().json); } catch (e) { }
+                }
+                indexLoaded = true;
+                renderPublicRoomList();
+                statusAfterIndex();
+                return true;
+            }).catch(err => {
+                console.error(err);
+                indexPromise = null;
+                lastError = (err.code || err.message || 'unknown');
+                const hint = String(lastError).includes('permission')
+                    ? 'Firestore Rules আপডেট করুন।'
+                    : 'ইন্টারনেট কানেকশন পরীক্ষা করুন।';
+                setStatus('error', `✕ ডাটাবেস কানেকশন ত্রুটি (${lastError}): ${hint}`);
+                return false;
+            });
+            return indexPromise;
+        }
+
+        function renderPublicRoomList() {
+            const list = document.getElementById('publicRoomList');
+            if (!list) return;
+            if (!indexLoaded) {
+                list.innerHTML = '<p class="text-sm text-slate-400 col-span-3">লোড হচ্ছে...</p>';
+                return;
+            }
+            const rooms = indexData.rooms || [];
+            if (rooms.length === 0) {
+                list.innerHTML = '<p class="text-sm text-slate-400 col-span-3">বর্তমানে কোন রুম প্ল্যান প্রকাশিত নেই।</p>';
+                return;
+            }
+            list.innerHTML = rooms.map(r => `
+                <div class="bg-indigo-50/60 border border-indigo-100 p-3 rounded-xl flex items-center justify-between">
+                    <div>
+                        <span class="text-[10px] text-indigo-600 font-bold block">${r.school || ''} - ${r.hall || 'প্রধান ভবন'}</span>
+                        <h5 class="font-bold text-indigo-950 text-sm">${r.roomNo}</h5>
+                        <p class="text-[11px] text-slate-500">${r.count} জন পরীক্ষার্থী বরাদ্দ</p>
+                    </div>
+                    <span class="text-xs bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-md">সক্রিয়</span>
+                </div>`).join('');
+        }
+
+        const origLoadRooms = window.loadAndRenderSavedRooms;
+        window.loadAndRenderSavedRooms = function () {
+            origLoadRooms();
+            renderPublicRoomList();
+        };
+
+        function startAdminListener() {
+            if (unsubRooms) return;
+            unsubRooms = onSnapshot(roomsCol, snap => {
+                roomsCache = snap.docs.map(d => {
+                    try { return JSON.parse(d.data().data); } catch (e) { return null; }
+                }).filter(Boolean).sort(byRoomNo);
+                loadAndRenderSavedRooms();
+            }, err => {
+                console.error(err);
+                alert('রুম লোড হয়নি: ' + err.message);
+            });
+        }
+        function stopAdminListener() {
+            if (unsubRooms) { unsubRooms(); unsubRooms = null; }
+            roomsCache = [];
+            loadAndRenderSavedRooms();
+        }
+
+        onAuthStateChanged(auth, user => {
+            isAdminAuthenticated = !!user;
+            if (user) startAdminListener(); else stopAdminListener();
+        });
+
+        window.getRooms = () => roomsCache;
+
+        window.verifyAdminPin = async function () {
+            const email = document.getElementById('adminEmailInput').value.trim();
+            const pass = document.getElementById('adminPinInput').value;
+            const err = document.getElementById('pinErrorMessage');
+            try {
+                await signInWithEmailAndPassword(auth, email, pass);
+                err.classList.add('hidden');
+                closeAdminPinModal();
+                document.getElementById('adminEmailInput').value = '';
+                switchTab('admin');
+            } catch (e) {
+                err.classList.remove('hidden');
+            }
+        };
+
+        window.lockAdmin = async function () {
+            await signOut(auth);
+            isAdminAuthenticated = false;
+            switchTab('search');
+            alert('অ্যাডমিন প্যানেল লক করা হয়েছে।');
+        };
+
+        window.saveCurrentRoomPlan = async function () {
+            if (!currentGeneratedPlan) return;
+            if (!auth.currentUser) { alert('আগে অ্যাডমিন লগইন করুন!'); return; }
+            const p = currentGeneratedPlan;
+            try {
+                await setDoc(doc(db, 'rooms', toId(p.roomNo)), {
+                    roomNo: p.roomNo,
+                    schoolName: p.schoolName,
+                    hallName: p.hallName,
+                    updatedAt: Date.now(),
+                    data: JSON.stringify(p)
+                });
+                const list = roomsCache.filter(r => toId(r.roomNo) !== toId(p.roomNo)).concat([p]);
+                await writeIndex(list);
+                alert(`সফলভাবে ${p.schoolName} - ${p.roomNo} অনলাইনে সেভ হয়েছে!`);
+            } catch (e) {
+                alert('সেভ হয়নি: ' + e.message);
+            }
+        };
+
+        window.deleteRoom = async function (roomNo) {
+            if (!auth.currentUser) return;
+            if (!confirm(`আপনি কি সত্যিই ${roomNo} এর তথ্য মুছে ফেলতে চান?`)) return;
+            try {
+                await deleteDoc(doc(db, 'rooms', toId(roomNo)));
+                await writeIndex(roomsCache.filter(r => toId(r.roomNo) !== toId(roomNo)));
+            } catch (e) { alert('মুছা যায়নি: ' + e.message); }
+        };
+
+        window.clearAllData = async function () {
+            if (!auth.currentUser) return;
+            if (!confirm('আপনি কি নিশ্চিত যে সকল রুমের ডাটা অনলাইন থেকে মুছে ফেলতে চান?')) return;
+            try {
+                await Promise.all(roomsCache.map(r => deleteDoc(doc(db, 'rooms', toId(r.roomNo)))));
+                await writeIndex([]);
+            } catch (e) { alert('মুছা যায়নি: ' + e.message); }
+        };
+
+        window.importBackup = function (event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = async e => {
+                try {
+                    if (!auth.currentUser) throw new Error('not logged in');
+                    const imported = JSON.parse(e.target.result);
+                    if (!Array.isArray(imported)) throw new Error('invalid');
+                    const valid = imported.filter(r => r.roomNo && r.seatMatrix && r.columnStructures && r.parsedGroups);
+                    await Promise.all(valid.map(r => setDoc(doc(db, 'rooms', toId(r.roomNo)), {
+                        roomNo: r.roomNo, schoolName: r.schoolName || '', hallName: r.hallName || '',
+                        updatedAt: Date.now(), data: JSON.stringify(r)
+                    })));
+                    const ids = new Set(valid.map(r => toId(r.roomNo)));
+                    const merged = roomsCache.filter(r => !ids.has(toId(r.roomNo))).concat(valid);
+                    await writeIndex(merged);
+                    alert('Import সফল হয়েছে! (' + valid.length + 'টি রুম)');
+                } catch (err) {
+                    alert('ভুল ফাইল বা লগইন নেই! সঠিক backup JSON ফাইল দিন।');
+                }
+                event.target.value = '';
+            };
+            reader.readAsText(file);
+        };
+
+        window.rebuildIndexNow = async function () {
+            if (!auth.currentUser) { alert('আগে অ্যাডমিন লগইন করুন!'); return; }
+            try {
+                await writeIndex(roomsCache);
+                alert('ইনডেক্স আপডেট হয়েছে! (' + roomsCache.length + 'টি রুম)');
+            } catch (e) { alert('আপডেট হয়নি: ' + e.message); }
+        };
+
+        window.searchPublicRoll = async function () {
+            const inputVal = document.getElementById('publicRollInput').value.trim();
+            const container = document.getElementById('searchResultContainer');
+            const foundCard = document.getElementById('resultFoundCard');
+            const notFoundCard = document.getElementById('resultNotFoundCard');
+            const gridBox = document.getElementById('publicRoomGrid');
+
+            if (!inputVal) { alert('অনুগ্রহ করে একটি রোল নম্বর লিখুন!'); return; }
+            container.classList.remove('hidden');
+
+            const ok = await loadIndex();
+            if (!ok) { alert('ডাটা লোড করা যায়নি। কারণ: ' + (lastError || 'ইন্টারনেট')); return; }
+
+            const rollNum = parseInt(inputVal, 10);
+            const e = indexData.rolls[String(rollNum)];
+            if (!e) {
+                foundCard.classList.add('hidden');
+                notFoundCard.classList.remove('hidden');
+                gridBox.innerHTML = '';
+                return;
+            }
+
+            const room = indexData.rooms[e[0]];
+            foundCard.classList.remove('hidden');
+            notFoundCard.classList.add('hidden');
+            document.getElementById('resRoll').innerText = rollNum;
+            document.getElementById('resSchool').innerText = room.school || 'আইডিয়াল হাই স্কুল';
+            document.getElementById('resHall').innerText = room.hall || 'প্রধান ভবন';
+            document.getElementById('resRoom').innerText = room.roomNo;
+            document.getElementById('resColumn').innerText = `কলাম ${e[1]}`;
+            document.getElementById('resBench').innerText = `বেঞ্চ ${e[2]}`;
+
+            gridBox.innerHTML = '<p class="text-sm text-slate-500">রুমের ম্যাপ লোড হচ্ছে...</p>';
+            try {
+                let plan = roomDocCache.get(room.id);
+                if (!plan) {
+                    const snap = await getDoc(doc(db, 'rooms', room.id));
+                    if (snap.exists()) {
+                        plan = JSON.parse(snap.data().data);
+                        roomDocCache.set(room.id, plan);
+                    }
+                }
+                if (plan) renderVisualGrid(plan.seatMatrix, plan.columnStructures, 'publicRoomGrid', rollNum);
+                else gridBox.innerHTML = '';
+            } catch (err) {
+                console.error(err);
+                gridBox.innerHTML = '<p class="text-sm text-rose-600">রুমের ম্যাপ লোড হয়নি, তবে উপরের তথ্য সঠিক।</p>';
+            }
+        };
+
+        renderPublicRoomList();
+        loadIndex();
+    </script>
 </body>
 </html>
